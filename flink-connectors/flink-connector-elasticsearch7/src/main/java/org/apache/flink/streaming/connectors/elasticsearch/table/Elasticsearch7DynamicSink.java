@@ -30,8 +30,16 @@ import org.apache.flink.table.connector.sink.DynamicTableSink;
 import org.apache.flink.table.connector.sink.SinkFunctionProvider;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.types.RowKind;
+import org.apache.flink.util.StringUtils;
 
 import org.apache.http.HttpHost;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.CredentialsProvider;
+import org.apache.http.conn.ssl.NoopHostnameVerifier;
+import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.ssl.SSLContextBuilder;
+import org.apache.http.ssl.SSLContexts;
 import org.elasticsearch.action.delete.DeleteRequest;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.update.UpdateRequest;
@@ -39,7 +47,20 @@ import org.elasticsearch.client.RestClientBuilder;
 import org.elasticsearch.common.xcontent.XContentType;
 
 import javax.annotation.Nullable;
+import javax.net.ssl.SSLContext;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.security.KeyManagementException;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
 import java.util.List;
 import java.util.Objects;
 
@@ -138,7 +159,16 @@ final class Elasticsearch7DynamicSink implements DynamicTableSink {
 
 			// we must overwrite the default factory which is defined with a lambda because of a bug
 			// in shading lambda serialization shading see FLINK-18006
-			builder.setRestClientFactory(new DefaultRestClientFactory(config.getPathPrefix().orElse(null)));
+			if (config.getUsername().isPresent()
+				&& config.getPassword().isPresent()
+				&& config.getCertificate().isPresent()
+				&& !StringUtils.isNullOrWhitespaceOnly(config.getUsername().get())
+				&& !StringUtils.isNullOrWhitespaceOnly(config.getPassword().get())
+				&& !StringUtils.isNullOrWhitespaceOnly(config.getCertificate().get())) {
+				builder.setRestClientFactory(new AuthRestClientFactory(config.getPathPrefix().orElse(null), config.getUsername().get(), config.getPassword().get(), config.getCertificate().get()));
+			} else {
+				builder.setRestClientFactory(new DefaultRestClientFactory(config.getPathPrefix().orElse(null)));
+			}
 
 			final ElasticsearchSink<RowData> sink = builder.build();
 
@@ -194,6 +224,153 @@ final class Elasticsearch7DynamicSink implements DynamicTableSink {
 		@Override
 		public int hashCode() {
 			return Objects.hash(pathPrefix);
+		}
+	}
+
+	/**
+	 * Serializable {@link RestClientFactory} used by the sink which enable authentication.
+	 */
+	@VisibleForTesting
+	static class AuthRestClientFactory implements RestClientFactory {
+
+		private final String pathPrefix;
+		private final String username;
+		private final String password;
+		private final String certificate;
+		private transient CredentialsProvider credentialsProvider;
+		private transient SSLContext sslContext;
+
+		public AuthRestClientFactory(@Nullable String pathPrefix, String username, String password, String certificate) {
+			this.pathPrefix = pathPrefix;
+			this.password = password;
+			this.username = username;
+			this.certificate = certificate;
+		}
+
+		@Override
+		public void configureRestClientBuilder(RestClientBuilder restClientBuilder) {
+			if (pathPrefix != null) {
+				restClientBuilder.setPathPrefix(pathPrefix);
+			}
+			if (credentialsProvider == null) {
+				credentialsProvider = new BasicCredentialsProvider();
+				credentialsProvider.setCredentials(AuthScope.ANY, new UsernamePasswordCredentials(username, password));
+			}
+			if (certificate != null){
+				Path caCertificatePath  = Paths.get(certificate); //新生成的keystore文件路径
+				try {
+					CertificateFactory factory = CertificateFactory.getInstance("X.509");
+					Certificate trustedCa;
+					try (InputStream is = Files.newInputStream(caCertificatePath)) {
+						trustedCa = factory.generateCertificate(is);
+					}
+					KeyStore trustStore = KeyStore.getInstance("pkcs12");
+					trustStore.load(null, null);
+					trustStore.setCertificateEntry("ca", trustedCa);
+					SSLContextBuilder sslContextBuilder = SSLContexts.custom().loadTrustMaterial(trustStore, null);
+					sslContext = sslContextBuilder.build();
+				} catch (CertificateException e) {
+					e.printStackTrace();
+				} catch (IOException e) {
+					e.printStackTrace();
+				} catch (KeyStoreException e) {
+					e.printStackTrace();
+				} catch (NoSuchAlgorithmException e) {
+					e.printStackTrace();
+				} catch (KeyManagementException e) {
+					e.printStackTrace();
+				}
+
+				restClientBuilder.setHttpClientConfigCallback(httpAsyncClientBuilder ->
+					httpAsyncClientBuilder.setSSLContext(sslContext).setDefaultCredentialsProvider(credentialsProvider).setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE));
+			} else {
+				restClientBuilder.setHttpClientConfigCallback(httpAsyncClientBuilder ->
+					httpAsyncClientBuilder.setDefaultCredentialsProvider(credentialsProvider));
+			}
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (o == null || getClass() != o.getClass()) {
+				return false;
+			}
+			AuthRestClientFactory that = (AuthRestClientFactory) o;
+			return Objects.equals(pathPrefix, that.pathPrefix) &&
+				Objects.equals(username, that.username) &&
+				Objects.equals(password, that.password);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(pathPrefix, password, username);
+		}
+	}
+
+	/**
+	 * @Author jlo
+	 * @Description 添加Es ssl 证书认证
+	 * @Date  2020/7/16
+	 * @Param
+	 * @return
+	 **/
+	@VisibleForTesting
+	static class CertificateClientFactory implements RestClientFactory {
+		private final String certificate;
+
+		public CertificateClientFactory(@Nullable String certificate) {
+			this.certificate = certificate;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o){
+				return true;
+			}
+			if (!(o instanceof CertificateClientFactory)){
+				return false;
+			}
+			CertificateClientFactory that = (CertificateClientFactory) o;
+			return Objects.equals(certificate, that.certificate);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(certificate);
+		}
+
+		@Override
+		public void configureRestClientBuilder(RestClientBuilder restClientBuilder) {
+			if (certificate != null){
+				Path caCertificatePath  = Paths.get(certificate); //新生成的keystore文件路径
+				try {
+					CertificateFactory factory = CertificateFactory.getInstance("X.509");
+					Certificate trustedCa;
+					try (InputStream is = Files.newInputStream(caCertificatePath)) {
+						trustedCa = factory.generateCertificate(is);
+					}
+					KeyStore trustStore = KeyStore.getInstance("pkcs12");
+					trustStore.load(null, null);
+					trustStore.setCertificateEntry("ca", trustedCa);
+					SSLContextBuilder sslContextBuilder = SSLContexts.custom().loadTrustMaterial(trustStore, null);
+					final SSLContext sslContext = sslContextBuilder.build();
+					restClientBuilder.setHttpClientConfigCallback(httpAsyncClientBuilder ->
+						httpAsyncClientBuilder.setSSLContext(sslContext).setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE)
+					);
+				} catch (CertificateException e) {
+					e.printStackTrace();
+				} catch (IOException e) {
+					e.printStackTrace();
+				} catch (KeyStoreException e) {
+					e.printStackTrace();
+				} catch (NoSuchAlgorithmException e) {
+					e.printStackTrace();
+				} catch (KeyManagementException e) {
+					e.printStackTrace();
+				}
+			}
 		}
 	}
 

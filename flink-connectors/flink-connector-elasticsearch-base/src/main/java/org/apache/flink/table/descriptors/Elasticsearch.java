@@ -36,6 +36,7 @@ import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTO
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_BULK_FLUSH_INTERVAL;
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_BULK_FLUSH_MAX_ACTIONS;
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_BULK_FLUSH_MAX_SIZE;
+import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_CERTIFICATE;
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_CONNECTION_MAX_RETRY_TIMEOUT;
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_CONNECTION_PATH_PREFIX;
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_DOCUMENT_TYPE;
@@ -47,6 +48,7 @@ import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTO
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_KEY_DELIMITER;
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_KEY_NULL_LITERAL;
 import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_TYPE_VALUE_ELASTICSEARCH;
+import static org.apache.flink.table.descriptors.ElasticsearchValidator.CONNECTOR_USERNAME;
 
 /**
  * Connector descriptor for the Elasticsearch search engine.
@@ -100,6 +102,26 @@ public class Elasticsearch extends ConnectorDescriptor {
 	 */
 	public Elasticsearch index(String index) {
 		internalProperties.putString(CONNECTOR_INDEX, index);
+		return this;
+	}
+
+	/**
+	 * The Elasticsearch Cluster username.
+	 *
+	 * @param username Elasticsearch username
+	 */
+	public Elasticsearch username(String username) {
+		internalProperties.putString(CONNECTOR_USERNAME, username);
+		return this;
+	}
+
+	/**
+	 * The Elasticsearch Cluster certificate.
+	 *
+	 * @param certificate Elasticsearch username
+	 */
+	public Elasticsearch certificate(String certificate) {
+		internalProperties.putString(CONNECTOR_CERTIFICATE, certificate);
 		return this;
 	}
 

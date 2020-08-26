@@ -47,6 +47,9 @@ public class ElasticsearchValidator extends ConnectorDescriptorValidator {
 	public static final String CONNECTOR_HOSTS_HOSTNAME = "hostname";
 	public static final String CONNECTOR_HOSTS_PORT = "port";
 	public static final String CONNECTOR_HOSTS_PROTOCOL = "protocol";
+	public static final String CONNECTOR_USERNAME = "connector.username";
+	public static final String CONNECTOR_PASSWORD = "connector.password";
+	public static final String CONNECTOR_CERTIFICATE = "connector.certificate";
 	public static final String CONNECTOR_INDEX = "connector.index";
 	public static final String CONNECTOR_DOCUMENT_TYPE = "connector.document-type";
 	public static final String CONNECTOR_KEY_DELIMITER = "connector.key-delimiter";
@@ -76,10 +79,25 @@ public class ElasticsearchValidator extends ConnectorDescriptorValidator {
 		properties.validateValue(CONNECTOR_TYPE, CONNECTOR_TYPE_VALUE_ELASTICSEARCH, false);
 		validateVersion(properties);
 		validateHosts(properties);
+		validateAuth(properties);
+		validateCertificate(properties);
 		validateGeneralProperties(properties);
 		validateFailureHandler(properties);
 		validateBulkFlush(properties);
 		validateConnectionProperties(properties);
+	}
+
+	private void validateAuth(DescriptorProperties properties) {
+		if (properties.containsKey(CONNECTOR_USERNAME) || properties.containsKey(CONNECTOR_PASSWORD)) {
+			properties.validateString(CONNECTOR_USERNAME, false, 1);
+			properties.validateString(CONNECTOR_PASSWORD, false, 1);
+		}
+	}
+
+	private void validateCertificate(DescriptorProperties properties) {
+		if (properties.containsKey(CONNECTOR_CERTIFICATE)) {
+			properties.validateString(CONNECTOR_CERTIFICATE, false, 1);
+		}
 	}
 
 	private void validateVersion(DescriptorProperties properties) {

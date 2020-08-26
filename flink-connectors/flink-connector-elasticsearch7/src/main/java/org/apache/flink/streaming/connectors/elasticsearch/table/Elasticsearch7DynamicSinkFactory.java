@@ -31,6 +31,7 @@ import org.apache.flink.table.factories.DynamicTableSinkFactory;
 import org.apache.flink.table.factories.FactoryUtil;
 import org.apache.flink.table.factories.SerializationFormatFactory;
 import org.apache.flink.table.utils.TableSchemaUtils;
+import org.apache.flink.util.StringUtils;
 
 import java.util.Set;
 import java.util.function.Supplier;
@@ -43,6 +44,7 @@ import static org.apache.flink.streaming.connectors.elasticsearch.table.Elastics
 import static org.apache.flink.streaming.connectors.elasticsearch.table.ElasticsearchOptions.BULK_FLUSH_BACKOFF_TYPE_OPTION;
 import static org.apache.flink.streaming.connectors.elasticsearch.table.ElasticsearchOptions.BULK_FLUSH_INTERVAL_OPTION;
 import static org.apache.flink.streaming.connectors.elasticsearch.table.ElasticsearchOptions.BULK_FLUSH_MAX_ACTIONS_OPTION;
+import static org.apache.flink.streaming.connectors.elasticsearch.table.ElasticsearchOptions.CERTIFICATE;
 import static org.apache.flink.streaming.connectors.elasticsearch.table.ElasticsearchOptions.CONNECTION_MAX_RETRY_TIMEOUT_OPTION;
 import static org.apache.flink.streaming.connectors.elasticsearch.table.ElasticsearchOptions.CONNECTION_PATH_PREFIX;
 import static org.apache.flink.streaming.connectors.elasticsearch.table.ElasticsearchOptions.FAILURE_HANDLER_OPTION;
@@ -51,6 +53,9 @@ import static org.apache.flink.streaming.connectors.elasticsearch.table.Elastics
 import static org.apache.flink.streaming.connectors.elasticsearch.table.ElasticsearchOptions.HOSTS_OPTION;
 import static org.apache.flink.streaming.connectors.elasticsearch.table.ElasticsearchOptions.INDEX_OPTION;
 import static org.apache.flink.streaming.connectors.elasticsearch.table.ElasticsearchOptions.KEY_DELIMITER_OPTION;
+import static org.apache.flink.streaming.connectors.elasticsearch.table.ElasticsearchOptions.PASSWORD_OPTION;
+import static org.apache.flink.streaming.connectors.elasticsearch.table.ElasticsearchOptions.USERNAME_OPTION;
+
 
 /**
  * A {@link DynamicTableSinkFactory} for discovering {@link Elasticsearch7DynamicSink}.
@@ -73,7 +78,10 @@ public class Elasticsearch7DynamicSinkFactory implements DynamicTableSinkFactory
 		BULK_FLUSH_BACKOFF_DELAY_OPTION,
 		CONNECTION_MAX_RETRY_TIMEOUT_OPTION,
 		CONNECTION_PATH_PREFIX,
-		FORMAT_OPTION
+		FORMAT_OPTION,
+		PASSWORD_OPTION,
+		USERNAME_OPTION,
+		CERTIFICATE
 	).collect(Collectors.toSet());
 
 	@Override
@@ -132,6 +140,27 @@ public class Elasticsearch7DynamicSinkFactory implements DynamicTableSinkFactory
 				BULK_FLUSH_BACKOFF_MAX_RETRIES_OPTION.key(),
 				config.getBulkFlushBackoffRetries().get())
 		);
+		if (config.getUsername().isPresent() && !StringUtils.isNullOrWhitespaceOnly(config.getUsername().get())) {
+			validate(
+				config.getPassword().isPresent() && !StringUtils.isNullOrWhitespaceOnly(config.getPassword().get()),
+				() -> String.format(
+					"'%s' and '%s' must be set at the same time. Got: username '%s' and password '%s'",
+					USERNAME_OPTION.key(),
+					PASSWORD_OPTION.key(),
+					config.getUsername().get(),
+					config.getPassword().orElse("")
+				));
+		}
+		if (config.getCertificate().isPresent() && !StringUtils.isNullOrWhitespaceOnly(config.getUsername().get())){
+			validate(
+				config.getCertificate().isPresent() && !StringUtils.isNullOrWhitespaceOnly(config.getCertificate().get()),
+				() -> String.format(
+					"'%s' must be set at the same time. Got:certificate '%s'",
+					CERTIFICATE.key().length(),
+					config.getCertificate().get()
+				)
+			);
+		}
 	}
 
 	private static void validate(boolean condition, Supplier<String> message) {

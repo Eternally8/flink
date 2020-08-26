@@ -31,6 +31,13 @@ import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.types.Row;
 
 import org.apache.http.HttpHost;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.CredentialsProvider;
+import org.apache.http.conn.ssl.NoopHostnameVerifier;
+import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.ssl.SSLContextBuilder;
+import org.apache.http.ssl.SSLContexts;
 import org.elasticsearch.action.delete.DeleteRequest;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.update.UpdateRequest;
@@ -38,7 +45,20 @@ import org.elasticsearch.client.RestClientBuilder;
 import org.elasticsearch.common.xcontent.XContentType;
 
 import javax.annotation.Nullable;
+import javax.net.ssl.SSLContext;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.security.KeyManagementException;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -52,8 +72,11 @@ import static org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchU
 import static org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchUpsertTableSinkBase.SinkOption.BULK_FLUSH_INTERVAL;
 import static org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchUpsertTableSinkBase.SinkOption.BULK_FLUSH_MAX_ACTIONS;
 import static org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchUpsertTableSinkBase.SinkOption.BULK_FLUSH_MAX_SIZE;
+import static org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchUpsertTableSinkBase.SinkOption.CERTIFICATE;
 import static org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchUpsertTableSinkBase.SinkOption.DISABLE_FLUSH_ON_CHECKPOINT;
+import static org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchUpsertTableSinkBase.SinkOption.PASSWORD;
 import static org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchUpsertTableSinkBase.SinkOption.REST_PATH_PREFIX;
+import static org.apache.flink.streaming.connectors.elasticsearch.ElasticsearchUpsertTableSinkBase.SinkOption.USERNAME;
 
 /**
  * Version-specific upsert table sink for Elasticsearch 7.
@@ -185,8 +208,16 @@ public class Elasticsearch7UpsertTableSink extends ElasticsearchUpsertTableSinkB
 		Optional.ofNullable(sinkOptions.get(BULK_FLUSH_BACKOFF_DELAY))
 			.ifPresent(v -> builder.setBulkFlushBackoffDelay(Long.valueOf(v)));
 
-		builder.setRestClientFactory(
-			new DefaultRestClientFactory(sinkOptions.get(REST_PATH_PREFIX)));
+		String username = sinkOptions.get(USERNAME);
+		String password = sinkOptions.get(PASSWORD);
+		String pathPrefix = sinkOptions.get(REST_PATH_PREFIX);
+		String certificate = sinkOptions.get(CERTIFICATE);
+
+		if (Optional.ofNullable(username).isPresent() && Optional.ofNullable(password).isPresent()) {
+			builder.setRestClientFactory(new AuthRestClientFactory(username, password, pathPrefix, certificate));
+		} else {
+			builder.setRestClientFactory(new DefaultRestClientFactory(pathPrefix));
+		}
 
 		final ElasticsearchSink<Tuple2<Boolean, Row>> sink = builder.build();
 
@@ -205,6 +236,95 @@ public class Elasticsearch7UpsertTableSink extends ElasticsearchUpsertTableSinkB
 			ElasticsearchUpsertSinkFunction upsertSinkFunction,
 			List<HttpHost> httpHosts) {
 		return new ElasticsearchSink.Builder<>(httpHosts, upsertSinkFunction);
+	}
+
+	/**
+	 * This class implements {@link RestClientFactory}, used for es with authentication.
+	 */
+	static class AuthRestClientFactory implements RestClientFactory {
+
+		private String userName;
+
+		private String password;
+
+		private String pathPrefix;
+
+		private String certificate;
+
+		private transient CredentialsProvider credentialsProvider;
+
+		private transient SSLContext sslContext;
+
+		public AuthRestClientFactory(@Nullable String userName, @Nullable String password, @Nullable String pathPrefix, @Nullable String certificate) {
+			this.userName = userName;
+			this.password = password;
+			this.pathPrefix = pathPrefix;
+			this.certificate = certificate;
+		}
+
+		@Override
+		public void configureRestClientBuilder(RestClientBuilder restClientBuilder) {
+			if (credentialsProvider == null) {
+				credentialsProvider = new BasicCredentialsProvider();
+				credentialsProvider.setCredentials(AuthScope.ANY, new UsernamePasswordCredentials(userName, password));
+			}
+
+			if (pathPrefix != null) {
+				restClientBuilder.setPathPrefix(pathPrefix);
+			}
+
+			if (certificate != null){
+				Path caCertificatePath  = Paths.get(certificate); //新生成的keystore文件路径
+				try {
+					CertificateFactory factory = CertificateFactory.getInstance("X.509");
+					Certificate trustedCa;
+					try (InputStream is = Files.newInputStream(caCertificatePath)) {
+						trustedCa = factory.generateCertificate(is);
+					}
+					KeyStore trustStore = KeyStore.getInstance("pkcs12");
+					trustStore.load(null, null);
+					trustStore.setCertificateEntry("ca", trustedCa);
+					SSLContextBuilder sslContextBuilder = SSLContexts.custom().loadTrustMaterial(trustStore, null);
+					sslContext = sslContextBuilder.build();
+				} catch (CertificateException e) {
+					e.printStackTrace();
+				} catch (IOException e) {
+					e.printStackTrace();
+				} catch (KeyStoreException e) {
+					e.printStackTrace();
+				} catch (NoSuchAlgorithmException e) {
+					e.printStackTrace();
+				} catch (KeyManagementException e) {
+					e.printStackTrace();
+				}
+
+				restClientBuilder.setHttpClientConfigCallback(httpAsyncClientBuilder ->
+					httpAsyncClientBuilder.setSSLContext(sslContext).setDefaultCredentialsProvider(credentialsProvider).setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE));
+			} else {
+				restClientBuilder.setHttpClientConfigCallback(httpAsyncClientBuilder ->
+					httpAsyncClientBuilder.setDefaultCredentialsProvider(credentialsProvider));
+			}
+
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (o == null || getClass() != o.getClass()) {
+				return false;
+			}
+			AuthRestClientFactory that = (AuthRestClientFactory) o;
+			return Objects.equals(userName, that.userName) &&
+				Objects.equals(password, that.password) &&
+				Objects.equals(pathPrefix, that.pathPrefix);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(userName, password, pathPrefix);
+		}
 	}
 
 	// --------------------------------------------------------------------------------------------
