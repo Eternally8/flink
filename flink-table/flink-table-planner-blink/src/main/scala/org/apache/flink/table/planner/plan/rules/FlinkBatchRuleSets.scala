@@ -377,14 +377,16 @@ object FlinkBatchRuleSets {
     // merge calc after calc transpose
     FlinkCalcMergeRule.INSTANCE,
     // Rule that splits python ScalarFunctions from java/scala ScalarFunctions
-    PythonCalcSplitRule.SPLIT_REX_FIELD,
+    PythonCalcSplitRule.SPLIT_CONDITION_REX_FIELD,
+    PythonCalcSplitRule.SPLIT_PROJECTION_REX_FIELD,
     PythonCalcSplitRule.SPLIT_CONDITION,
     PythonCalcSplitRule.SPLIT_PROJECT,
     PythonCalcSplitRule.SPLIT_PANDAS_IN_PROJECT,
     PythonCalcSplitRule.EXPAND_PROJECT,
     PythonCalcSplitRule.PUSH_CONDITION,
-    PythonCalcSplitRule.REWRITE_PROJECT
-  )
+    PythonCalcSplitRule.REWRITE_PROJECT,
+    PythonMapMergeRule.INSTANCE
+    )
 
   /**
     * RuleSet to do physical optimize for batch
@@ -392,48 +394,48 @@ object FlinkBatchRuleSets {
   val PHYSICAL_OPT_RULES: RuleSet = RuleSets.ofList(
     FlinkExpandConversionRule.BATCH_INSTANCE,
     // source
-    BatchExecBoundedStreamScanRule.INSTANCE,
-    BatchExecTableSourceScanRule.INSTANCE,
-    BatchExecLegacyTableSourceScanRule.INSTANCE,
+    BatchPhysicalBoundedStreamScanRule.INSTANCE,
+    BatchPhysicalTableSourceScanRule.INSTANCE,
+    BatchPhysicalLegacyTableSourceScanRule.INSTANCE,
     BatchExecIntermediateTableScanRule.INSTANCE,
-    BatchExecValuesRule.INSTANCE,
+    BatchPhysicalValuesRule.INSTANCE,
     // calc
-    BatchExecCalcRule.INSTANCE,
-    BatchExecPythonCalcRule.INSTANCE,
+    BatchPhysicalCalcRule.INSTANCE,
+    BatchPhysicalPythonCalcRule.INSTANCE,
     // union
-    BatchExecUnionRule.INSTANCE,
+    BatchPhysicalUnionRule.INSTANCE,
     // sort
-    BatchExecSortRule.INSTANCE,
-    BatchExecLimitRule.INSTANCE,
-    BatchExecSortLimitRule.INSTANCE,
+    BatchPhysicalSortRule.INSTANCE,
+    BatchPhysicalLimitRule.INSTANCE,
+    BatchPhysicalSortLimitRule.INSTANCE,
     // rank
-    BatchExecRankRule.INSTANCE,
+    BatchPhysicalRankRule.INSTANCE,
     RemoveRedundantLocalRankRule.INSTANCE,
     // expand
-    BatchExecExpandRule.INSTANCE,
+    BatchPhysicalExpandRule.INSTANCE,
     // group agg
-    BatchExecHashAggRule.INSTANCE,
-    BatchExecSortAggRule.INSTANCE,
+    BatchPhysicalHashAggRule.INSTANCE,
+    BatchPhysicalSortAggRule.INSTANCE,
     RemoveRedundantLocalSortAggRule.WITHOUT_SORT,
     RemoveRedundantLocalSortAggRule.WITH_SORT,
     RemoveRedundantLocalHashAggRule.INSTANCE,
-    BatchExecPythonAggregateRule.INSTANCE,
+    BatchPhysicalPythonAggregateRule.INSTANCE,
     // over agg
     BatchExecOverAggregateRule.INSTANCE,
     // window agg
-    BatchExecWindowAggregateRule.INSTANCE,
-    BatchExecPythonWindowAggregateRule.INSTANCE,
+    BatchPhysicalWindowAggregateRule.INSTANCE,
+    BatchPhysicalPythonWindowAggregateRule.INSTANCE,
     // join
-    BatchExecHashJoinRule.INSTANCE,
-    BatchExecSortMergeJoinRule.INSTANCE,
-    BatchExecNestedLoopJoinRule.INSTANCE,
+    BatchPhysicalHashJoinRule.INSTANCE,
+    BatchPhysicalSortMergeJoinRule.INSTANCE,
+    BatchPhysicalNestedLoopJoinRule.INSTANCE,
     BatchExecSingleRowJoinRule.INSTANCE,
     BatchExecLookupJoinRule.SNAPSHOT_ON_TABLESCAN,
     BatchExecLookupJoinRule.SNAPSHOT_ON_CALC_TABLESCAN,
     // correlate
-    BatchExecConstantTableFunctionScanRule.INSTANCE,
-    BatchExecCorrelateRule.INSTANCE,
-    BatchExecPythonCorrelateRule.INSTANCE,
+    BatchPhysicalConstantTableFunctionScanRule.INSTANCE,
+    BatchPhysicalCorrelateRule.INSTANCE,
+    BatchPhysicalPythonCorrelateRule.INSTANCE,
     // sink
     BatchExecSinkRule.INSTANCE,
     BatchExecLegacySinkRule.INSTANCE

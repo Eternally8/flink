@@ -74,7 +74,7 @@ Congratulations! You have successfully run a Flink application by deploying Flin
 
 {% top %}
 
-## Deployment Modes Supported by Flink on Kubernetes
+## Deployment Modes
 
 For production use, we recommend deploying Flink Applications in the [Application Mode]({% link deployment/index.zh.md %}#application-mode), as these modes provide a better isolation for the Applications.
 
@@ -121,7 +121,7 @@ You can override configurations set in `conf/flink-conf.yaml` by passing key-val
 
 ### Per-Job Cluster Mode
 
-Flink on Mesos does not support Per-Job Cluster Mode.
+Flink on Kubernetes does not support Per-Job Cluster Mode.
 
 ### Session Mode
 
@@ -307,7 +307,8 @@ $ kubectl create clusterrolebinding flink-role-binding-default --clusterrole=edi
 {% endhighlight %}
 
 If you do not want to use the `default` service account, use the following command to create a new `flink-service-account` service account and set the role binding.
-Then use the config option `-Dkubernetes.jobmanager.service-account=flink-service-account` to make the JobManager pod use the `flink-service-account` service account to create and delete TaskManager pods.
+Then use the config option `-Dkubernetes.service-account=flink-service-account` to make the JobManager pod use the `flink-service-account` service account to create/delete TaskManager pods and leader ConfigMaps. 
+Also this will allow the TaskManager to watch leader ConfigMaps to retrieve the address of JobManager and ResourceManager.
 
 {% highlight bash %}
 $ kubectl create serviceaccount flink-service-account

@@ -21,8 +21,9 @@ package org.apache.flink.table.planner.plan.nodes.exec
 import org.apache.flink.api.dag.Transformation
 import org.apache.flink.table.delegation.Planner
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory
+import org.apache.flink.table.planner.plan.nodes.exec.visitor.ExecNodeVisitor
 import org.apache.flink.table.planner.plan.nodes.physical.FlinkPhysicalRel
-import org.apache.flink.table.types.logical.RowType
+import org.apache.flink.table.types.logical.LogicalType
 import org.apache.flink.util.Preconditions.{checkArgument, checkNotNull}
 
 import org.apache.calcite.rel.RelDistribution
@@ -57,7 +58,7 @@ trait LegacyExecNodeBase[P <: Planner, T] extends ExecNode[T] {
     this.asInstanceOf[FlinkPhysicalRel].getRelDetailedDescription
   }
 
-  override def getOutputType: RowType = {
+  override def getOutputType: LogicalType = {
     FlinkTypeFactory.toLogicalRowType(this.asInstanceOf[FlinkPhysicalRel].getRowType)
   }
 

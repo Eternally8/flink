@@ -47,7 +47,6 @@ import org.apache.flink.runtime.operators.coordination.OperatorCoordinator;
 import org.apache.flink.runtime.operators.coordination.OperatorEvent;
 import org.apache.flink.runtime.query.KvStateLocation;
 import org.apache.flink.runtime.query.UnknownKvStateLocation;
-import org.apache.flink.runtime.rest.handler.legacy.backpressure.OperatorBackPressureStats;
 import org.apache.flink.runtime.state.KeyGroupRange;
 import org.apache.flink.runtime.taskmanager.TaskExecutionState;
 import org.apache.flink.util.FlinkException;
@@ -56,7 +55,6 @@ import javax.annotation.Nullable;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -65,104 +63,126 @@ import java.util.concurrent.CompletableFuture;
  * <p>Instances are created via {@link SchedulerNGFactory}, and receive a {@link JobGraph} when
  * instantiated.
  *
- * <p>Implementations can expect that methods will not be invoked concurrently. In fact,
- * all invocations will originate from a thread in the {@link ComponentMainThreadExecutor}, which
- * will be passed via {@link #setMainThreadExecutor(ComponentMainThreadExecutor)}.
+ * <p>Implementations can expect that methods will not be invoked concurrently. In fact, all
+ * invocations will originate from a thread in the {@link ComponentMainThreadExecutor}, which will
+ * be passed via {@link #initialize(ComponentMainThreadExecutor)}.
  */
 public interface SchedulerNG {
 
-	void setMainThreadExecutor(ComponentMainThreadExecutor mainThreadExecutor);
+    void initialize(ComponentMainThreadExecutor mainThreadExecutor);
 
-	void registerJobStatusListener(JobStatusListener jobStatusListener);
+    void registerJobStatusListener(JobStatusListener jobStatusListener);
 
-	void startScheduling();
+    void startScheduling();
 
-	void suspend(Throwable cause);
+    void suspend(Throwable cause);
 
-	void cancel();
+    void cancel();
 
-	CompletableFuture<Void> getTerminationFuture();
+    CompletableFuture<Void> getTerminationFuture();
 
-	void handleGlobalFailure(Throwable cause);
+    void handleGlobalFailure(Throwable cause);
 
-	default boolean updateTaskExecutionState(TaskExecutionState taskExecutionState) {
-		return updateTaskExecutionState(new TaskExecutionStateTransition(taskExecutionState));
-	}
+    default boolean updateTaskExecutionState(TaskExecutionState taskExecutionState) {
+        return updateTaskExecutionState(new TaskExecutionStateTransition(taskExecutionState));
+    }
 
-	boolean updateTaskExecutionState(TaskExecutionStateTransition taskExecutionState);
+    boolean updateTaskExecutionState(TaskExecutionStateTransition taskExecutionState);
 
-	SerializedInputSplit requestNextInputSplit(JobVertexID vertexID, ExecutionAttemptID executionAttempt) throws IOException;
+    SerializedInputSplit requestNextInputSplit(
+            JobVertexID vertexID, ExecutionAttemptID executionAttempt) throws IOException;
 
-	ExecutionState requestPartitionState(IntermediateDataSetID intermediateResultId, ResultPartitionID resultPartitionId) throws PartitionProducerDisposedException;
+    ExecutionState requestPartitionState(
+            IntermediateDataSetID intermediateResultId, ResultPartitionID resultPartitionId)
+            throws PartitionProducerDisposedException;
 
-	void scheduleOrUpdateConsumers(ResultPartitionID partitionID);
+    void notifyPartitionDataAvailable(ResultPartitionID partitionID);
 
-	ArchivedExecutionGraph requestJob();
+    ArchivedExecutionGraph requestJob();
 
-	JobStatus requestJobStatus();
+    JobStatus requestJobStatus();
 
-	JobDetails requestJobDetails();
+    JobDetails requestJobDetails();
 
-	// ------------------------------------------------------------------------------------
-	// Methods below do not belong to Scheduler but are included due to historical reasons
-	// ------------------------------------------------------------------------------------
+    // ------------------------------------------------------------------------------------
+    // Methods below do not belong to Scheduler but are included due to historical reasons
+    // ------------------------------------------------------------------------------------
 
-	KvStateLocation requestKvStateLocation(JobID jobId, String registrationName) throws UnknownKvStateLocation, FlinkJobNotFoundException;
+    KvStateLocation requestKvStateLocation(JobID jobId, String registrationName)
+            throws UnknownKvStateLocation, FlinkJobNotFoundException;
 
-	void notifyKvStateRegistered(JobID jobId, JobVertexID jobVertexId, KeyGroupRange keyGroupRange, String registrationName, KvStateID kvStateId, InetSocketAddress kvStateServerAddress) throws FlinkJobNotFoundException;
+    void notifyKvStateRegistered(
+            JobID jobId,
+            JobVertexID jobVertexId,
+            KeyGroupRange keyGroupRange,
+            String registrationName,
+            KvStateID kvStateId,
+            InetSocketAddress kvStateServerAddress)
+            throws FlinkJobNotFoundException;
 
-	void notifyKvStateUnregistered(JobID jobId, JobVertexID jobVertexId, KeyGroupRange keyGroupRange, String registrationName) throws FlinkJobNotFoundException;
+    void notifyKvStateUnregistered(
+            JobID jobId,
+            JobVertexID jobVertexId,
+            KeyGroupRange keyGroupRange,
+            String registrationName)
+            throws FlinkJobNotFoundException;
 
-	// ------------------------------------------------------------------------
+    // ------------------------------------------------------------------------
 
-	void updateAccumulators(AccumulatorSnapshot accumulatorSnapshot);
+    void updateAccumulators(AccumulatorSnapshot accumulatorSnapshot);
 
-	// ------------------------------------------------------------------------
+    // ------------------------------------------------------------------------
 
-	Optional<OperatorBackPressureStats> requestOperatorBackPressureStats(JobVertexID jobVertexId) throws FlinkException;
+    CompletableFuture<String> triggerSavepoint(@Nullable String targetDirectory, boolean cancelJob);
 
-	// ------------------------------------------------------------------------
+    void acknowledgeCheckpoint(
+            JobID jobID,
+            ExecutionAttemptID executionAttemptID,
+            long checkpointId,
+            CheckpointMetrics checkpointMetrics,
+            TaskStateSnapshot checkpointState);
 
-	CompletableFuture<String> triggerSavepoint(@Nullable String targetDirectory, boolean cancelJob);
+    void declineCheckpoint(DeclineCheckpoint decline);
 
-	void acknowledgeCheckpoint(JobID jobID, ExecutionAttemptID executionAttemptID, long checkpointId, CheckpointMetrics checkpointMetrics, TaskStateSnapshot checkpointState);
+    CompletableFuture<String> stopWithSavepoint(
+            String targetDirectory, boolean advanceToEndOfEventTime);
 
-	void declineCheckpoint(DeclineCheckpoint decline);
+    // ------------------------------------------------------------------------
+    //  Operator Coordinator related methods
+    //
+    //  These are necessary as long as the Operator Coordinators are part of the
+    //  scheduler. There are good reasons to pull them out of the Scheduler and
+    //  make them directly a part of the JobMaster. However, we would need to
+    //  rework the complete CheckpointCoordinator initialization before we can
+    //  do that, because the CheckpointCoordinator is initialized (and restores
+    //  savepoint) in the scheduler constructor, which requires the coordinators
+    //  to be there as well.
+    // ------------------------------------------------------------------------
 
-	CompletableFuture<String> stopWithSavepoint(String targetDirectory, boolean advanceToEndOfEventTime);
+    /**
+     * Delivers the given OperatorEvent to the {@link OperatorCoordinator} with the given {@link
+     * OperatorID}.
+     *
+     * <p>Failure semantics: If the task manager sends an event for a non-running task or a
+     * non-existing operator coordinator, then respond with an exception to the call. If task and
+     * coordinator exist, then we assume that the call from the TaskManager was valid, and any
+     * bubbling exception needs to cause a job failure
+     *
+     * @throws FlinkException Thrown, if the task is not running or no operator/coordinator exists
+     *     for the given ID.
+     */
+    void deliverOperatorEventToCoordinator(
+            ExecutionAttemptID taskExecution, OperatorID operator, OperatorEvent evt)
+            throws FlinkException;
 
-	// ------------------------------------------------------------------------
-	//  Operator Coordinator related methods
-	//
-	//  These are necessary as long as the Operator Coordinators are part of the
-	//  scheduler. There are good reasons to pull them out of the Scheduler and
-	//  make them directly a part of the JobMaster. However, we would need to
-	//  rework the complete CheckpointCoordinator initialization before we can
-	//  do that, because the CheckpointCoordinator is initialized (and restores
-	//  savepoint) in the scheduler constructor, which requires the coordinators
-	//  to be there as well.
-	// ------------------------------------------------------------------------
-
-	/**
-	 * Delivers the given OperatorEvent to the {@link OperatorCoordinator} with the given {@link OperatorID}.
-	 *
-	 * <p>Failure semantics: If the task manager sends an event for a non-running task or a
-	 * non-existing operator coordinator, then respond with an exception to the call.
-	 * If task and coordinator exist, then we assume that the call from the TaskManager was
-	 * valid, and any bubbling exception needs to cause a job failure
-	 *
-	 * @throws FlinkException Thrown, if the task is not running or no operator/coordinator exists
-	 *                        for the given ID.
-	 */
-	void deliverOperatorEventToCoordinator(ExecutionAttemptID taskExecution, OperatorID operator, OperatorEvent evt) throws FlinkException;
-
-	/**
-	 * Delivers a coordination request to the {@link OperatorCoordinator} with the given {@link OperatorID}
-	 * and returns the coordinator's response.
-	 *
-	 * @return A future containing the response.
-	 * @throws FlinkException Thrown, if the task is not running, or no operator/coordinator exists
-	 *                        for the given ID, or the coordinator cannot handle client events.
-	 */
-	CompletableFuture<CoordinationResponse> deliverCoordinationRequestToCoordinator(OperatorID operator, CoordinationRequest request) throws FlinkException;
+    /**
+     * Delivers a coordination request to the {@link OperatorCoordinator} with the given {@link
+     * OperatorID} and returns the coordinator's response.
+     *
+     * @return A future containing the response.
+     * @throws FlinkException Thrown, if the task is not running, or no operator/coordinator exists
+     *     for the given ID, or the coordinator cannot handle client events.
+     */
+    CompletableFuture<CoordinationResponse> deliverCoordinationRequestToCoordinator(
+            OperatorID operator, CoordinationRequest request) throws FlinkException;
 }

@@ -39,7 +39,7 @@ Dependencies
 ------------
 
 {% assign connector = site.data.sql-connectors['elastic'] %} 
-{% include sql-connector-download-table.html 
+{% include sql-connector-download-table.zh.html 
     connector=connector
 %}
 
@@ -147,7 +147,7 @@ Connector Options
       <ul>
         <li><code>fail</code>: throws an exception if a request fails and thus causes a job failure.</li>
         <li><code>ignore</code>: ignores failures and drops the request.</li>
-        <li><code>retry_rejected</code>: re-adds requests that have failed due to queue capacity saturation.</li>
+        <li><code>retry-rejected</code>: re-adds requests that have failed due to queue capacity saturation.</li>
         <li>custom class name: for failure handling with a ActionRequestFailureHandler subclass.</li>
       </ul>
       </td>

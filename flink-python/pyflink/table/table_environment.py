@@ -27,7 +27,7 @@ from py4j.java_gateway import get_java_class, get_method
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.table.sources import TableSource
 
-from pyflink.common.typeinfo import TypeInformation, WrapperTypeInfo
+from pyflink.common.typeinfo import TypeInformation
 from pyflink.datastream.data_stream import DataStream
 
 from pyflink.common import JobExecutionResult
@@ -46,7 +46,7 @@ from pyflink.table.types import _to_java_type, _create_type_verifier, RowType, D
     _infer_schema_from_data, _create_converter, from_arrow_type, RowField, create_arrow_schema, \
     _to_java_data_type
 from pyflink.table.udf import UserDefinedFunctionWrapper, AggregateFunction, udaf, \
-    UserDefinedAggregateFunctionWrapper
+    UserDefinedAggregateFunctionWrapper, udtaf, TableAggregateFunction
 from pyflink.table.utils import to_expression_jarray
 from pyflink.util import utils
 from pyflink.util.utils import get_j_env_configuration, is_local_deployment, load_java_class, \
@@ -246,7 +246,7 @@ class TableEnvironment(object, metaclass=ABCMeta):
         .. versionadded:: 1.12.0
         """
         function = self._wrap_aggregate_function_if_needed(function)
-        java_function = function.java_user_defined_function()
+        java_function = function._java_user_defined_function()
         self._j_tenv.createTemporarySystemFunction(name, java_function)
 
     def drop_temporary_system_function(self, name: str) -> bool:
@@ -384,7 +384,7 @@ class TableEnvironment(object, metaclass=ABCMeta):
         .. versionadded:: 1.12.0
         """
         function = self._wrap_aggregate_function_if_needed(function)
-        java_function = function.java_user_defined_function()
+        java_function = function._java_user_defined_function()
         self._j_tenv.createTemporaryFunction(path, java_function)
 
     def drop_temporary_function(self, path: str) -> bool:
@@ -1087,7 +1087,7 @@ class TableEnvironment(object, metaclass=ABCMeta):
         warnings.warn("Deprecated in 1.12. Use :func:`create_temporary_system_function` "
                       "instead.", DeprecationWarning)
         function = self._wrap_aggregate_function_if_needed(function)
-        java_function = function.java_user_defined_function()
+        java_function = function._java_user_defined_function()
         # this is a temporary solution and will be unified later when we use the new type
         # system(DataType) to replace the old type system(TypeInformation).
         if self._is_blink_planner and isinstance(self, BatchTableEnvironment):
@@ -1574,14 +1574,20 @@ class TableEnvironment(object, metaclass=ABCMeta):
         self._add_jars_to_j_env_config(classpaths_key)
 
     def _wrap_aggregate_function_if_needed(self, function) -> UserDefinedFunctionWrapper:
-        if isinstance(function, (AggregateFunction, UserDefinedAggregateFunctionWrapper)):
+        if isinstance(function, (AggregateFunction, TableAggregateFunction,
+                                 UserDefinedAggregateFunctionWrapper)):
             if not self._is_blink_planner:
-                raise Exception("Python UDAF is only supported in blink planner")
+                raise Exception("Python UDAF and UDTAF are only supported in blink planner")
         if isinstance(function, AggregateFunction):
             function = udaf(function,
                             result_type=function.get_result_type(),
                             accumulator_type=function.get_accumulator_type(),
                             name=str(function.__class__.__name__))
+        elif isinstance(function, TableAggregateFunction):
+            function = udtaf(function,
+                             result_type=function.get_result_type(),
+                             accumulator_type=function.get_accumulator_type(),
+                             name=str(function.__class__.__name__))
         return function
 
 
@@ -1757,11 +1763,7 @@ class StreamTableEnvironment(TableEnvironment):
 
         .. versionadded:: 1.12.0
         """
-        if isinstance(type_info, WrapperTypeInfo):
-            j_data_stream = self._j_tenv.toAppendStream(table._j_table,
-                                                        type_info.get_java_type_info())
-        else:
-            raise TypeError('type_info must be WrapperTypeInfo')
+        j_data_stream = self._j_tenv.toAppendStream(table._j_table, type_info.get_java_type_info())
         return DataStream(j_data_stream=j_data_stream)
 
     def to_retract_stream(self, table: Table, type_info: TypeInformation) -> DataStream:
@@ -1781,11 +1783,7 @@ class StreamTableEnvironment(TableEnvironment):
 
         .. versionadded:: 1.12.0
         """
-        if isinstance(type_info, WrapperTypeInfo):
-            j_data_stream = self._j_tenv.toRetractStream(table._j_table,
-                                                         type_info.get_java_type_info())
-        else:
-            raise TypeError('type_info must be WrapperTypeInfo')
+        j_data_stream = self._j_tenv.toRetractStream(table._j_table, type_info.get_java_type_info())
         return DataStream(j_data_stream=j_data_stream)
 
 

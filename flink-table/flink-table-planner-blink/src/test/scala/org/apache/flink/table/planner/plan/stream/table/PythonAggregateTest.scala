@@ -22,11 +22,12 @@ import org.apache.flink.api.java.tuple.Tuple1
 import org.apache.flink.api.scala._
 import org.apache.flink.table.api._
 import org.apache.flink.table.api.dataview.{ListView, MapView}
-import org.apache.flink.table.planner.plan.nodes.common.CommonPythonAggregate
+import org.apache.flink.table.planner.plan.nodes.exec.common.CommonExecPythonAggregate
 import org.apache.flink.table.planner.runtime.utils.JavaUserDefinedAggFunctions.TestPythonAggregateFunction
 import org.apache.flink.table.planner.typeutils.DataViewUtils.{DataViewSpec, ListViewSpec, MapViewSpec}
 import org.apache.flink.table.planner.utils.TableTestBase
 import org.apache.flink.table.types.DataType
+
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -40,7 +41,7 @@ class PythonAggregateTest extends TableTestBase {
 
     val resultTable = sourceTable.select(func('a, 'c))
 
-    util.verifyPlan(resultTable)
+    util.verifyExecPlan(resultTable)
   }
 
   @Test
@@ -52,7 +53,7 @@ class PythonAggregateTest extends TableTestBase {
     val resultTable = sourceTable.groupBy('b)
       .select('b, func('a, 'c))
 
-    util.verifyPlan(resultTable)
+    util.verifyExecPlan(resultTable)
   }
 
   @Test
@@ -64,7 +65,7 @@ class PythonAggregateTest extends TableTestBase {
     val resultTable = sourceTable.groupBy('b)
       .select('b, func('a, 'c), 'a.count())
 
-    util.verifyPlan(resultTable)
+    util.verifyExecPlan(resultTable)
   }
 
   @Test
@@ -115,7 +116,7 @@ class PythonAggregateTest extends TableTestBase {
   }
 }
 
-object TestCommonPythonAggregate extends CommonPythonAggregate {
+object TestCommonPythonAggregate extends CommonExecPythonAggregate {
   def extractDataViewSpecs(accType: DataType): Array[DataViewSpec] = {
     extractDataViewSpecs(0, accType)
   }

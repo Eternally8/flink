@@ -34,7 +34,7 @@ import org.apache.flink.table.planner.codegen.sort.ComparatorCodeGenerator
 import org.apache.flink.table.planner.delegation.BatchPlanner
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil
 import org.apache.flink.table.planner.plan.utils.AggregateUtil.transformToBatchAggregateInfoList
-import org.apache.flink.table.planner.plan.utils.OverAggregateUtil
+import org.apache.flink.table.planner.plan.utils.{OverAggregateUtil, SortUtil}
 import org.apache.flink.table.planner.plan.utils.OverAggregateUtil.getLongBoundary
 import org.apache.flink.table.runtime.generated.GeneratedRecordComparator
 import org.apache.flink.table.runtime.operators.over.frame.OffsetOverFrame.CalcOffsetFunc
@@ -42,7 +42,6 @@ import org.apache.flink.table.runtime.operators.over.frame._
 import org.apache.flink.table.runtime.operators.over.{BufferDataOverWindowOperator, NonBufferOverWindowOperator}
 import org.apache.flink.table.runtime.typeutils.InternalTypeInfo
 import org.apache.flink.table.types.logical.LogicalTypeRoot.{BIGINT, INTEGER, SMALLINT}
-
 import org.apache.calcite.plan._
 import org.apache.calcite.rel._
 import org.apache.calcite.rel.`type`.RelDataType
@@ -126,24 +125,21 @@ class BatchExecOverAggregate(
     //The generated sort is used for generating the comparator among partitions.
     //So here not care the ASC or DESC for the grouping fields.
     //TODO just replace comparator to equaliser
-    val collation = grouping.map(_ => (true, false))
     val genComparator =  ComparatorCodeGenerator.gen(
       config,
       "SortComparator",
-      grouping,
-      grouping.map(inputType.getTypeAt),
-      collation.map(_._1),
-      collation.map(_._2))
+      FlinkTypeFactory.toLogicalRowType(inputRowType),
+      SortUtil.getAscendingSortSpec(grouping))
 
     var managedMemory: Long = 0L
     val operator = if (!needBufferData) {
       //operator needn't cache data
       val aggHandlers = modeToGroupToAggCallToAggFunction.map { case (_, _, aggCallToAggFunction) =>
         val aggInfoList = transformToBatchAggregateInfoList(
-          aggCallToAggFunction.map(_._1),
           // use aggInputType which considers constants as input instead of inputType
-          inputTypeWithConstants,
-          orderKeyIndices)
+          FlinkTypeFactory.toLogicalRowType(inputTypeWithConstants),
+          aggCallToAggFunction.map(_._1),
+          orderKeyIndexes = orderKeyIndices)
         val codeGenCtx = CodeGeneratorContext(config)
         val generator = new AggsHandlerCodeGenerator(
           codeGenCtx,
@@ -191,10 +187,10 @@ class BatchExecOverAggregate(
           //lies on the offset of the window frame.
           aggCallToAggFunction.map { case (aggCall, _) =>
             val aggInfoList = transformToBatchAggregateInfoList(
+              FlinkTypeFactory.toLogicalRowType(inputTypeWithConstants),
               Seq(aggCall),
-              inputTypeWithConstants,
-              orderKeyIndices,
-              Array[Boolean](true) /* needRetraction = true, See LeadLagAggFunction */)
+              Array[Boolean](true), /* needRetraction = true, See LeadLagAggFunction */
+              orderKeyIndexes = orderKeyIndices)
 
             val generator = new AggsHandlerCodeGenerator(
               CodeGeneratorContext(config),
@@ -263,10 +259,10 @@ class BatchExecOverAggregate(
 
         case _ =>
           val aggInfoList = transformToBatchAggregateInfoList(
-            aggCallToAggFunction.map(_._1),
             //use aggInputType which considers constants as input instead of inputSchema.relDataType
-            inputTypeWithConstants,
-            orderKeyIndices)
+            FlinkTypeFactory.toLogicalRowType(inputTypeWithConstants),
+            aggCallToAggFunction.map(_._1),
+            orderKeyIndexes = orderKeyIndices)
           val codeGenCtx = CodeGeneratorContext(config)
           val generator = new AggsHandlerCodeGenerator(
             codeGenCtx,
